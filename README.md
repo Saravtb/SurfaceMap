@@ -1,37 +1,105 @@
-# SurfaceMap
+```
+  ____             __                 __  ___
+ / __/_ ____ _____/ /__ _______ __  /  |/  /__ ____
+_\ \/ // / __/ _ / _ / __/ -_) //  / /|_/ / _ `/ _ \
+/___/\_,_/_/  \_,_/_//_/\__/\_,_/ /_/  /_/\_,_/ .__/
+                                             /_/
+        Attack Surface Mapping for Pentesting
+```
 
-Ferramenta de coleta de informacoes (reconnaissance) para construir um
-mapeamento de superficie de ataque, como etapa inicial de um pentest
-autorizado. Aceita como alvo um **dominio**, um **IP unico**, um **bloco
-CIDR** ou um **range de IPs**.
+Todo pentest comeca do mesmo jeito: um alvo, e um bocado de perguntas sem
+resposta. Que subdominios existem? O que esta escutando em cada porta?
+Que tecnologia roda por tras daquele HTTP 200? Existe um `.git` exposto
+esperando para ser encontrado?
 
-## ⚠️ Aviso legal
+**SurfaceMap** e uma ferramenta de linha de comando que faz essas
+perguntas por voce, de forma sistematica, e devolve um mapa da superficie
+de ataque — em JSON para automatizar, em HTML e PDF para anexar num
+relatorio, em Markdown para colar direto no ticket.
 
-Esta ferramenta executa varredura ativa de rede (portas, subdominios,
-diretorios web). **Use apenas contra alvos para os quais voce possui
-autorizacao explicita e por escrito** (contrato de pentest, programa de
-bug bounty com escopo definido, ou ativos proprios). Uso nao autorizado
-pode configurar crime e violar termos de servico. Ao rodar a ferramenta,
-voce sera solicitado a confirmar que possui essa autorizacao.
+Aponte para um **dominio**, um **IP**, um **bloco CIDR** ou um **range de
+enderecos**; o resto e com a ferramenta.
+
+---
+
+### Indice
+
+- [Aviso legal](#aviso-legal)
+- [O pipeline de reconhecimento](#o-pipeline-de-reconhecimento)
+- [Tipos de alvo suportados](#tipos-de-alvo-suportados)
+- [O que ela coleta](#o-que-ela-coleta)
+- [Instalacao](#instalacao)
+- [Uso](#uso)
+- [Opcoes principais](#opcoes-principais)
+- [Exemplos](#exemplos)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [O que ela nao faz de proposito](#o-que-ela-nao-faz-de-proposito)
+
+---
+
+## Aviso legal
+
+> Esta ferramenta executa varredura ativa de rede: portas, subdominios,
+> diretorios web. Isso nao e algo que se aponta para qualquer dominio que
+> passar na frente.
+>
+> **Use apenas contra alvos para os quais voce possui autorizacao
+> explicita e por escrito** — um contrato de pentest, um programa de bug
+> bounty com escopo definido, ou ativos que voce mesmo administra.
+>
+> Uso nao autorizado de ferramentas de varredura contra sistemas de
+> terceiros pode configurar crime e violar termos de servico. A
+> ferramenta pede essa confirmacao antes de rodar; leve a serio, a
+> responsabilidade e sempre de quem aperta o Enter.
+
+---
+
+## O pipeline de reconhecimento
+
+```
+     alvo: dominio | IP | bloco CIDR | range de IPs
+                         |
+                         v
+        DNS + WHOIS + subdominios  (dominios: CT logs e brute force)
+                         |
+                         v
+        portas abertas  (TCP connect interno, ou nmap com -sV)
+                         |
+                         v
+        fingerprint HTTP/HTTPS  (headers, titulo, tecnologia)
+                         |
+                         v
+        diretorios sensiveis + screenshot de cada host vivo
+                         |
+                         v
+        relatorio consolidado: JSON / Markdown / HTML / PDF
+```
+
+Cada etapa pode ser ligada, desligada ou ajustada por flag — o pipeline
+inteiro roda por padrao, mas nada aqui e tudo-ou-nada.
+
+---
 
 ## Tipos de alvo suportados
 
 | Alvo | Exemplo | O que roda |
 |---|---|---|
-| Dominio | `exemplo.com.br` | DNS, WHOIS, enumeracao de subdominios, e o restante abaixo para cada host resolvido |
-| IP unico | `192.168.1.10` | WHOIS do IP, e o restante abaixo |
-| Bloco CIDR | `192.168.1.0/24` | Expande para os IPs do bloco (host bits; `/31` e `/32` incluem ambos os enderecos), WHOIS do primeiro IP como amostra, e o restante abaixo para cada IP |
+| Dominio | `exemplo.com.br` | DNS, WHOIS, enumeracao de subdominios, e o restante do pipeline para cada host resolvido |
+| IP unico | `192.168.1.10` | WHOIS do IP, e o restante do pipeline |
+| Bloco CIDR | `192.168.1.0/24` | Expande para os IPs do bloco (host bits; `/31` e `/32` incluem ambos os enderecos), WHOIS do primeiro IP como amostra, e o restante do pipeline para cada IP |
 | Range de IPs | `192.168.1.10-192.168.1.20` ou `192.168.1.10-20` (abreviado, ultimo octeto) | Mesmo tratamento de um bloco CIDR |
 
 Para alvos IP/CIDR/range a ferramenta tambem tenta resolver o **PTR**
 (DNS reverso) de cada endereco (desative com `--no-ptr`), e a descoberta
-de diretorios roda em todos os IPs com HTTP ativo por padrao (nao so no
-"alvo principal", conceito que so existe para dominios).
+de diretorios roda em todos os IPs com HTTP ativo por padrao — nao so no
+"alvo principal", conceito que so existe para dominios.
 
-⚠️ Um bloco grande (ex. `/16`) pode ter dezenas de milhares de enderecos;
-a ferramenta so escaneia em profundidade ate `--max-hosts` deles (padrao
-15) e avisa quando a lista foi truncada. Aumente `--max-hosts` conforme o
-escopo autorizado do teste.
+> Um bloco grande (uma `/16`, por exemplo) pode ter dezenas de milhares
+> de enderecos. A ferramenta so escaneia em profundidade ate `--max-hosts`
+> deles (padrao 15) e avisa quando a lista foi truncada. Aumente
+> `--max-hosts` conforme o escopo autorizado do teste — nunca alem dele.
+
+---
 
 ## O que ela coleta
 
@@ -45,11 +113,14 @@ escopo autorizado do teste.
 | Diretorios | Descoberta de caminhos/arquivos sensiveis comuns (`.git`, `.env`, painel admin, backups, etc.) |
 | Screenshots | Captura de tela de cada host web ativo, via Chromium headless (`--screenshots`, opcional) |
 
-O resultado agregado e exportado em **JSON**, **Markdown**, **HTML**
-(relatorio navegavel, tema escuro, com tabelas por host e screenshots
-incorporados quando capturados) e, opcionalmente, **PDF** (`--pdf`), gerado
-a partir do proprio HTML via Chromium headless — util para anexar em um
-relatorio de pentest ou enviar por email.
+O resultado agregado e exportado em **JSON** (para automatizar),
+**Markdown** (para colar num ticket), **HTML** (relatorio navegavel, tema
+escuro, com tabelas por host e screenshots incorporados) e,
+opcionalmente, **PDF** (`--pdf`) — o mesmo HTML renderizado por um
+Chromium headless, pronto para anexar num relatorio de pentest ou
+mandar por email.
+
+---
 
 ## Instalacao
 
@@ -62,18 +133,19 @@ pip install -r requirements.txt
 `dnspython` e opcional mas recomendado: sem ele, a coleta de DNS fica
 limitada a registros A e o teste de AXFR e pulado.
 
-Para usar `--screenshots` tambem e preciso instalar o Playwright e um
-navegador Chromium (nao vem no `requirements.txt` por padrao, ja que baixa
-~150MB):
+Para usar `--screenshots` ou `--pdf` tambem e preciso instalar o
+Playwright e um navegador Chromium (nao vem no `requirements.txt` por
+padrao, ja que baixa cerca de 150MB):
 
 ```bash
 pip install playwright
 playwright install chromium
 ```
 
-Sem isso, `--screenshots` apenas imprime um aviso e a ferramenta continua
-normalmente (as demais etapas nao dependem do Playwright). A mesma
-instalacao tambem habilita `--pdf` (exportacao do relatorio em PDF).
+Sem isso, as duas flags apenas imprimem um aviso e a ferramenta continua
+normalmente — nenhuma outra etapa depende do Playwright.
+
+---
 
 ## Uso
 
@@ -82,7 +154,7 @@ python main.py exemplo.com.br
 ```
 
 Voce sera solicitado a confirmar autorizacao interativamente. Para rodar
-sem prompt (ex.: em CI, com autorizacao ja documentada):
+sem prompt (em CI, por exemplo, com autorizacao ja documentada):
 
 ```bash
 python main.py exemplo.com.br --yes
@@ -127,7 +199,9 @@ positional:
   -y, --yes                  Confirma autorizacao sem prompt interativo
 ```
 
-### Exemplos
+---
+
+## Exemplos
 
 Reconhecimento completo, portas customizadas, saida em pasta especifica:
 
@@ -143,40 +217,41 @@ automaticamente TCP connect scan em vez de SYN scan):
 python main.py exemplo.com.br --use-nmap --nmap-args "-sV -sC" --yes
 ```
 
-Reconhecimento com captura de screenshot de cada host web encontrado
-(requer Playwright + Chromium instalados, ver secao de Instalacao):
+Reconhecimento com captura de screenshot de cada host web encontrado:
 
 ```bash
 python main.py exemplo.com.br --screenshots --yes
 ```
 
 Relatorio completo com screenshots e exportacao em PDF, pronto para
-anexar em um documento de pentest:
+anexar num documento de pentest:
 
 ```bash
 python main.py exemplo.com.br --screenshots --pdf --yes
 ```
 
-Somente reconhecimento passivo (sem tocar diretamente no alvo com scans
-ativos de porta/diretorio, apenas DNS/WHOIS/subdominios passivos):
+Somente reconhecimento passivo — sem tocar diretamente no alvo com scans
+ativos de porta ou diretorio, apenas DNS, WHOIS e subdominios via CT logs:
 
 ```bash
 python main.py exemplo.com.br --skip-ports --skip-dirs --no-active-subdomains --yes
 ```
 
-Varredura de um bloco CIDR (rede interna de um cliente, por exemplo),
+Varredura de um bloco CIDR (a rede interna de um cliente, por exemplo),
 elevando o limite de hosts para cobrir toda a `/24`:
 
 ```bash
 python main.py 192.168.1.0/24 --max-hosts 254 --yes
 ```
 
-Varredura de um range especifico de IPs, com sintaxe abreviada de
+Varredura de um range especifico de IPs, com a sintaxe abreviada de
 ultimo octeto:
 
 ```bash
 python main.py 10.0.0.100-150 --yes
 ```
+
+---
 
 ## Estrutura do projeto
 
@@ -202,13 +277,19 @@ surfacemap/
 main.py                Ponto de entrada (python main.py <alvo>)
 ```
 
-## Limitacoes conhecidas
+---
+
+## O que ela nao faz de proposito
+
+Nenhuma ferramenta de reconhecimento e onisciente, e esta aqui prefere
+ser honesta sobre isso a fingir cobertura total:
 
 - Por padrao a varredura de portas usa TCP connect scan simples (sem SYN
   scan), o que e mais lento que o `nmap` mas nao requer privilegios de
-  root. Use `--use-nmap` para deteccao de servico/versao via `nmap` quando
-  ele estiver instalado (a ferramenta cai de volta para o scanner interno
-  automaticamente se o binario nao existir ou a execucao falhar).
+  root. Use `--use-nmap` para deteccao de servico/versao via `nmap`
+  quando ele estiver instalado — a ferramenta cai de volta para o
+  scanner interno automaticamente se o binario nao existir ou a execucao
+  falhar.
 - `--screenshots` e `--pdf` exigem `pip install playwright` + `playwright
   install chromium` (ou um Chromium ja instalado e compativel com a
   versao do pacote `playwright`); sem isso, cada flag e ignorada com um
@@ -217,6 +298,7 @@ main.py                Ponto de entrada (python main.py <alvo>)
   cobertura maior, use uma wordlist maior (ex. SecLists) via
   `--subdomain-wordlist`.
 - O fingerprint de tecnologias e heuristico (regex sobre headers/HTML) e
-  pode gerar falsos positivos/negativos.
-- Esta ferramenta nao substitui uma analise manual aprofundada nem testes
-  de exploracao; ela serve para acelerar a fase de reconhecimento.
+  pode gerar falsos positivos ou negativos.
+- Esta ferramenta nao substitui uma analise manual aprofundada nem
+  testes de exploracao; ela existe para acelerar a fase de
+  reconhecimento, nao para substituir quem interpreta os resultados.
