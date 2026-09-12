@@ -103,6 +103,15 @@ def to_markdown(data: dict) -> str:
                 lines.append(f"- Tecnologias detectadas: {', '.join(info['technologies'])}")
             lines.append("")
 
+        shot = hdata.get("screenshot")
+        if shot:
+            lines.append("### Screenshot")
+            if shot.get("path"):
+                lines.append(f"![screenshot de {host}]({shot['path']})")
+            else:
+                lines.append(f"- Falha ao capturar: {shot.get('error')}")
+            lines.append("")
+
         dirs = hdata.get("dir_enum", [])
         if dirs:
             lines.append("### Caminhos interessantes encontrados")
@@ -237,6 +246,17 @@ def to_html(data: dict) -> str:
                 f"Titulo: {html.escape(str(info.get('title')))}<br>"
                 f"Tecnologias: {html.escape(techs)}</p>"
             )
+
+        shot = hdata.get("screenshot")
+        if shot:
+            if shot.get("path"):
+                parts.append(
+                    "<h3>Screenshot</h3>"
+                    f"<img src=\"{html.escape(shot['path'])}\" alt=\"screenshot de {html.escape(host)}\" "
+                    "style=\"max-width:100%;border:1px solid #334155;border-radius:.4rem;\">"
+                )
+            else:
+                parts.append(f"<h3>Screenshot</h3><p>Falha ao capturar: {html.escape(str(shot.get('error')))}</p>")
 
         dirs = hdata.get("dir_enum", [])
         if dirs:

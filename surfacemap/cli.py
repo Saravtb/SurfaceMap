@@ -6,7 +6,16 @@ import re
 import sys
 
 from surfacemap import utils
-from surfacemap.modules import dir_enum, dns_recon, http_probe, nmap_scan, ports, subdomains, whois_lookup
+from surfacemap.modules import (
+    dir_enum,
+    dns_recon,
+    http_probe,
+    nmap_scan,
+    ports,
+    screenshot,
+    subdomains,
+    whois_lookup,
+)
 from surfacemap.report import builder
 
 DEFAULT_SUBDOMAIN_WORDLIST = os.path.join(os.path.dirname(__file__), "wordlists", "subdomains.txt")
@@ -57,6 +66,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dir-enum-all", action="store_true",
         help="Executar descoberta de diretorios em todos os hosts (padrao: apenas o alvo principal)"
+    )
+    parser.add_argument(
+        "--screenshots", action="store_true",
+        help="Captura screenshot de cada host web encontrado, via Playwright/Chromium "
+             "(requer 'pip install playwright' e 'playwright install chromium'; sem isso, "
+             "a opcao e ignorada com um aviso)."
+    )
+    parser.add_argument(
+        "--screenshot-timeout", type=int, default=screenshot.DEFAULT_TIMEOUT_MS,
+        help=f"Timeout em ms para carregar cada pagina antes do screenshot (padrao: {screenshot.DEFAULT_TIMEOUT_MS})"
     )
     parser.add_argument("--skip-dns", action="store_true")
     parser.add_argument("--skip-whois", action="store_true")
@@ -172,7 +191,54 @@ def _run_network_recon(args, target_raw: str, target_kind: str, data: dict) -> d
     return {ip: ip for ip in collected}
 
 
-def run(args) -> dict:
+def _capture_screenshots(args, data: dict, output_dir: str) -> None:
+    if not screenshot.is_available():
+        print(
+            "[!] --screenshots solicitado, mas o pacote 'playwright' nao esta instalado. "
+            "Rode: pip install playwright && playwright install chromium",
+            file=sys.stderr,
+        )
+        return
+
+    live_hosts = []
+    for host, host_data in data["hosts"].items():
+        http_data = host_data.get("http", {})
+        scheme = next(
+            (s for s in ("https", "http") if http_data.get(s, {}).get("status") is not None),
+            None,
+        )
+        if scheme:
+            live_hosts.append((host, scheme))
+
+    if not live_hosts:
+        print("[*] Nenhum host com HTTP/HTTPS ativo para capturar screenshot.")
+        return
+
+    print(f"\n[*] Capturando screenshot de {len(live_hosts)} host(s) web...")
+    shots_dir = os.path.join(output_dir, "screenshots")
+    os.makedirs(shots_dir, exist_ok=True)
+
+    try:
+        with screenshot.ScreenshotSession(timeout_ms=args.screenshot_timeout) as session:
+            for host, scheme in live_hosts:
+                url = f"{scheme}://{host}"
+                filename = re.sub(r"[^A-Za-z0-9.\-]", "_", f"{host}_{scheme}") + ".png"
+                out_path = os.path.join(shots_dir, filename)
+                print(f"    - {url}")
+                result = session.capture(url, out_path)
+                if result["error"]:
+                    print(f"      [!] falhou: {result['error']}", file=sys.stderr)
+                    data["hosts"][host]["screenshot"] = {"error": result["error"]}
+                else:
+                    data["hosts"][host]["screenshot"] = {
+                        "path": os.path.relpath(out_path, output_dir),
+                        "url": url,
+                    }
+    except RuntimeError as exc:
+        print(f"[!] Nao foi possivel iniciar o navegador para screenshots: {exc}", file=sys.stderr)
+
+
+def run(args, output_dir: str) -> dict:
     target_raw = args.target.strip()
     try:
         target_kind = utils.classify_target(target_raw)
@@ -252,6 +318,9 @@ def run(args) -> dict:
 
         data["hosts"][host] = host_data
 
+    if args.screenshots:
+        _capture_screenshots(args, data, output_dir)
+
     data["finished_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return data
 
@@ -266,12 +335,13 @@ def main(argv=None):
         print("Abortado: autorizacao nao confirmada.", file=sys.stderr)
         sys.exit(1)
 
-    data = run(args)
-
-    safe_target = re.sub(r"[^A-Za-z0-9.\-]", "_", data["target"])
+    safe_target = re.sub(r"[^A-Za-z0-9.\-]", "_", args.target.strip())
     output_dir = args.output or os.path.join(
         "reports", f"{safe_target}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
     )
+
+    data = run(args, output_dir)
+
     paths = builder.save_all_reports(data, output_dir)
 
     print("\n[+] Relatorios gerados:")

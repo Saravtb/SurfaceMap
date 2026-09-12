@@ -2,3 +2,14 @@
 # de zone transfer (AXFR). Sem ele, a ferramenta ainda funciona com um
 # fallback baseado apenas em socket.gethostbyname (somente registros A).
 dnspython>=2.4.0
+
+# playwright habilita a flag --screenshots (captura de tela dos hosts web
+# encontrados). Nao e instalado por padrao porque tambem exige baixar um
+# navegador Chromium (~150MB). Para usar --screenshots:
+#   pip install playwright
+#   playwright install chromium
+# Sem isso a ferramenta funciona normalmente; --screenshots so imprime um
+# aviso e segue em frente. Se o seu ambiente ja tem um Chromium pre-instalado
+# (variavel PLAYWRIGHT_BROWSERS_PATH), confira a revisao instalada e escolha
+# a versao do pacote playwright que casa com ela (ex.: revisao 1194 ->
+# playwright==1.56.0) em vez de rodar "playwright install".

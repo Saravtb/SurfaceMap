@@ -43,9 +43,11 @@ escopo autorizado do teste.
 | Portas | Varredura TCP connect nas portas mais comuns (ou range customizado); opcionalmente via `nmap` com deteccao de servico/versao (`--use-nmap`) |
 | HTTP/HTTPS | Status, headers, titulo da pagina e fingerprint leve de tecnologias (WordPress, Nginx, Laravel, etc.) |
 | Diretorios | Descoberta de caminhos/arquivos sensiveis comuns (`.git`, `.env`, painel admin, backups, etc.) |
+| Screenshots | Captura de tela de cada host web ativo, via Chromium headless (`--screenshots`, opcional) |
 
 O resultado agregado e exportado em **JSON**, **Markdown** e **HTML**
-(relatorio navegavel, tema escuro, com tabelas por host).
+(relatorio navegavel, tema escuro, com tabelas por host e screenshots
+incorporados quando capturados).
 
 ## Instalacao
 
@@ -57,6 +59,18 @@ pip install -r requirements.txt
 
 `dnspython` e opcional mas recomendado: sem ele, a coleta de DNS fica
 limitada a registros A e o teste de AXFR e pulado.
+
+Para usar `--screenshots` tambem e preciso instalar o Playwright e um
+navegador Chromium (nao vem no `requirements.txt` por padrao, ja que baixa
+~150MB):
+
+```bash
+pip install playwright
+playwright install chromium
+```
+
+Sem isso, `--screenshots` apenas imprime um aviso e a ferramenta continua
+normalmente (as demais etapas nao dependem do Playwright).
 
 ## Uso
 
@@ -93,6 +107,8 @@ positional:
   --subdomain-wordlist PATH  Wordlist customizada para brute force de subdominios
   --dir-wordlist PATH        Wordlist customizada para descoberta de diretorios
   --dir-enum-all             Roda descoberta de diretorios em todos os hosts, nao so no alvo principal
+  --screenshots              Captura screenshot de cada host web ativo (requer Playwright + Chromium)
+  --screenshot-timeout MS    Timeout em ms para carregar a pagina antes do screenshot (padrao: 15000)
 
   --skip-dns                 Pula coleta de registros DNS
   --skip-zone-transfer       Pula teste de AXFR
@@ -121,6 +137,13 @@ automaticamente TCP connect scan em vez de SYN scan):
 
 ```bash
 python main.py exemplo.com.br --use-nmap --nmap-args "-sV -sC" --yes
+```
+
+Reconhecimento com captura de screenshot de cada host web encontrado
+(requer Playwright + Chromium instalados, ver secao de Instalacao):
+
+```bash
+python main.py exemplo.com.br --screenshots --yes
 ```
 
 Somente reconhecimento passivo (sem tocar diretamente no alvo com scans
@@ -158,6 +181,7 @@ surfacemap/
     http_probe.py           Fingerprint HTTP/HTTPS
     dir_enum.py              Descoberta de diretorios/arquivos
     whois_lookup.py          WHOIS
+    screenshot.py            Captura de tela opcional via Playwright/Chromium
   report/
     builder.py               Geracao de JSON/Markdown/HTML
   wordlists/
@@ -173,6 +197,10 @@ main.py                Ponto de entrada (python main.py <alvo>)
   root. Use `--use-nmap` para deteccao de servico/versao via `nmap` quando
   ele estiver instalado (a ferramenta cai de volta para o scanner interno
   automaticamente se o binario nao existir ou a execucao falhar).
+- `--screenshots` exige `pip install playwright` + `playwright install
+  chromium` (ou um Chromium ja instalado e compativel com a versao do
+  pacote `playwright`); sem isso, a flag e ignorada com um aviso e o
+  restante do reconhecimento roda normalmente.
 - A enumeracao de subdominios ativa depende da wordlist fornecida; para
   cobertura maior, use uma wordlist maior (ex. SecLists) via
   `--subdomain-wordlist`.
