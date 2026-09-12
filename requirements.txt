@@ -1,0 +1,4 @@
+# dnspython habilita consultas DNS completas (MX/TXT/SOA/NS/CNAME) e o teste
+# de zone transfer (AXFR). Sem ele, a ferramenta ainda funciona com um
+# fallback baseado apenas em socket.gethostbyname (somente registros A).
+dnspython>=2.4.0
