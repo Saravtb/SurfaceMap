@@ -20,7 +20,7 @@ voce sera solicitado a confirmar que possui essa autorizacao.
 | DNS | Registros A, AAAA, MX, NS, TXT, SOA, CNAME + teste de zone transfer (AXFR) |
 | WHOIS | Dados de registro do dominio |
 | Subdominios | Enumeracao passiva via Certificate Transparency (crt.sh) + brute force ativo por wordlist |
-| Portas | Varredura TCP connect nas portas mais comuns (ou range customizado) |
+| Portas | Varredura TCP connect nas portas mais comuns (ou range customizado); opcionalmente via `nmap` com deteccao de servico/versao (`--use-nmap`) |
 | HTTP/HTTPS | Status, headers, titulo da pagina e fingerprint leve de tecnologias (WordPress, Nginx, Laravel, etc.) |
 | Diretorios | Descoberta de caminhos/arquivos sensiveis comuns (`.git`, `.env`, painel admin, backups, etc.) |
 
@@ -61,6 +61,12 @@ positional:
   -t, --threads N            Threads para brute force/scan (padrao: 30)
   --ports RANGE              Ex: "1-1024" ou "22,80,443" (padrao: top ports internas)
   --max-hosts N              Maximo de subdominios analisados em profundidade (padrao: 15)
+  --use-nmap                 Usa o nmap (se instalado) para escanear portas com deteccao de
+                              servico/versao, em vez do scanner TCP connect interno. Se o
+                              nmap nao estiver no PATH ou a execucao falhar, cai automaticamente
+                              para o scanner interno.
+  --nmap-args ARGS            Argumentos extras passados ao nmap (padrao: "-sV")
+  --nmap-timeout N            Timeout em segundos por host para o nmap (padrao: 300)
   --subdomain-wordlist PATH  Wordlist customizada para brute force de subdominios
   --dir-wordlist PATH        Wordlist customizada para descoberta de diretorios
   --dir-enum-all             Roda descoberta de diretorios em todos os hosts, nao so no alvo principal
@@ -86,6 +92,14 @@ Reconhecimento completo, portas customizadas, saida em pasta especifica:
 python main.py exemplo.com.br --ports 1-1024 -o relatorios/exemplo --yes
 ```
 
+Varredura de portas usando nmap com deteccao de servico e scripts padrao
+(requer `nmap` instalado no sistema; sem privilegio de root o nmap usa
+automaticamente TCP connect scan em vez de SYN scan):
+
+```bash
+python main.py exemplo.com.br --use-nmap --nmap-args "-sV -sC" --yes
+```
+
 Somente reconhecimento passivo (sem tocar diretamente no alvo com scans
 ativos de porta/diretorio, apenas DNS/WHOIS/subdominios passivos):
 
@@ -102,7 +116,8 @@ surfacemap/
   modules/
     dns_recon.py          Registros DNS + AXFR
     subdomains.py          crt.sh (passivo) + brute force (ativo)
-    ports.py                Varredura de portas TCP
+    ports.py                Varredura de portas TCP (scanner interno)
+    nmap_scan.py             Backend opcional de varredura via nmap (-sV, XML parsing)
     http_probe.py           Fingerprint HTTP/HTTPS
     dir_enum.py              Descoberta de diretorios/arquivos
     whois_lookup.py          WHOIS
@@ -116,9 +131,11 @@ main.py                Ponto de entrada (python main.py <alvo>)
 
 ## Limitacoes conhecidas
 
-- A varredura de portas usa TCP connect scan simples (sem SYN scan), o que
-  e mais lento que ferramentas como `nmap` mas nao requer privilegios de
-  root.
+- Por padrao a varredura de portas usa TCP connect scan simples (sem SYN
+  scan), o que e mais lento que o `nmap` mas nao requer privilegios de
+  root. Use `--use-nmap` para deteccao de servico/versao via `nmap` quando
+  ele estiver instalado (a ferramenta cai de volta para o scanner interno
+  automaticamente se o binario nao existir ou a execucao falhar).
 - A enumeracao de subdominios ativa depende da wordlist fornecida; para
   cobertura maior, use uma wordlist maior (ex. SecLists) via
   `--subdomain-wordlist`.

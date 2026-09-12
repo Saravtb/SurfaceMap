@@ -26,6 +26,12 @@ def scan_port(ip: str, port: int, timeout: float = 1.5):
 
 
 def scan_ports(ip: str, ports=None, threads: int = 50, timeout: float = 1.5) -> dict:
+    """TCP connect scan. Returns {port: {service, product, version, extrainfo}}.
+
+    product/version/extrainfo are always None here (no banner grabbing) -
+    the schema matches modules.nmap_scan.scan_ports so callers and report
+    templates can treat either backend the same way.
+    """
     ports = ports or TOP_PORTS
     open_ports = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
@@ -34,7 +40,12 @@ def scan_ports(ip: str, ports=None, threads: int = 50, timeout: float = 1.5) -> 
             res = future.result()
             if res:
                 port, service = res
-                open_ports[port] = service
+                open_ports[port] = {
+                    "service": service,
+                    "product": None,
+                    "version": None,
+                    "extrainfo": None,
+                }
     return dict(sorted(open_ports.items()))
 
 

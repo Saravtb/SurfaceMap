@@ -70,9 +70,13 @@ def to_markdown(data: dict) -> str:
 
         ports = hdata.get("ports", {})
         if ports:
-            rows = [[p, s] for p, s in ports.items()]
-            lines.append("### Portas abertas")
-            lines.append(_md_table(["Porta", "Servico"], rows))
+            scanner = hdata.get("port_scanner", "builtin")
+            lines.append(f"### Portas abertas (scanner: {scanner})")
+            rows = [
+                [p, info.get("service") or "-", info.get("product") or "-", info.get("version") or "-"]
+                for p, info in ports.items()
+            ]
+            lines.append(_md_table(["Porta", "Servico", "Produto", "Versao"], rows))
 
         http_data = hdata.get("http", {})
         for scheme, info in http_data.items():
@@ -184,8 +188,15 @@ def to_html(data: dict) -> str:
 
         ports = hdata.get("ports", {})
         if ports:
-            rows = [[p, s] for p, s in ports.items()]
-            parts.append("<h3>Portas abertas</h3>" + _html_table(["Porta", "Servico"], rows))
+            scanner = hdata.get("port_scanner", "builtin")
+            rows = [
+                [p, info.get("service") or "-", info.get("product") or "-", info.get("version") or "-"]
+                for p, info in ports.items()
+            ]
+            parts.append(
+                f"<h3>Portas abertas (scanner: {html.escape(scanner)})</h3>"
+                + _html_table(["Porta", "Servico", "Produto", "Versao"], rows)
+            )
 
         http_data = hdata.get("http", {})
         for scheme, info in http_data.items():

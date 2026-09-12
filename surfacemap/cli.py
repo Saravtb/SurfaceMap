@@ -5,7 +5,7 @@ import os
 import sys
 
 from surfacemap import utils
-from surfacemap.modules import dir_enum, dns_recon, http_probe, ports, subdomains, whois_lookup
+from surfacemap.modules import dir_enum, dns_recon, http_probe, nmap_scan, ports, subdomains, whois_lookup
 from surfacemap.report import builder
 
 DEFAULT_SUBDOMAIN_WORDLIST = os.path.join(os.path.dirname(__file__), "wordlists", "subdomains.txt")
@@ -27,6 +27,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-hosts", type=int, default=15,
         help="Numero maximo de subdominios (alem do alvo principal) a escanear em profundidade (padrao: 15)"
+    )
+    parser.add_argument(
+        "--use-nmap", action="store_true",
+        help="Usa o nmap (se disponivel no PATH) para escanear portas com deteccao de servico/versao, "
+             "em vez do scanner TCP connect interno. Cai de volta para o scanner interno se o nmap "
+             "nao estiver instalado ou falhar."
+    )
+    parser.add_argument(
+        "--nmap-args", default=nmap_scan.DEFAULT_EXTRA_ARGS,
+        help=f"Argumentos extras passados ao nmap (padrao: '{nmap_scan.DEFAULT_EXTRA_ARGS}')."
+    )
+    parser.add_argument(
+        "--nmap-timeout", type=int, default=300,
+        help="Timeout em segundos para a execucao do nmap por host (padrao: 300)"
     )
     parser.add_argument("--subdomain-wordlist", default=DEFAULT_SUBDOMAIN_WORDLIST)
     parser.add_argument("--dir-wordlist", default=DEFAULT_DIR_WORDLIST)
@@ -118,14 +132,34 @@ def run(args) -> dict:
           f"{', '.join(h for h, _ in hosts_to_scan)}")
 
     port_list = ports.parse_port_range(args.ports) if args.ports else None
+    nmap_port_spec = args.ports or ",".join(str(p) for p in ports.TOP_PORTS)
+
+    use_nmap = args.use_nmap
+    if use_nmap and not nmap_scan.is_available():
+        print("[!] --use-nmap solicitado, mas o binario 'nmap' nao foi encontrado no PATH. "
+              "Usando o scanner interno.", file=sys.stderr)
+        use_nmap = False
 
     for host, ip in hosts_to_scan:
         host_data = {"ip": ip}
         print(f"\n=== {host} ({ip}) ===")
 
         if not args.skip_ports:
-            print(f"[*] Escaneando portas em {ip}...")
-            host_data["ports"] = ports.scan_ports(ip, ports=port_list, threads=args.threads)
+            if use_nmap:
+                print(f"[*] Escaneando portas em {ip} com nmap ({args.nmap_args})...")
+                try:
+                    host_data["ports"] = nmap_scan.scan_ports(
+                        ip, port_spec=nmap_port_spec, extra_args=args.nmap_args, timeout=args.nmap_timeout
+                    )
+                    host_data["port_scanner"] = "nmap"
+                except RuntimeError as exc:
+                    print(f"[!] nmap falhou em {ip} ({exc}); usando scanner interno.", file=sys.stderr)
+                    host_data["ports"] = ports.scan_ports(ip, ports=port_list, threads=args.threads)
+                    host_data["port_scanner"] = "builtin (fallback apos falha do nmap)"
+            else:
+                print(f"[*] Escaneando portas em {ip}...")
+                host_data["ports"] = ports.scan_ports(ip, ports=port_list, threads=args.threads)
+                host_data["port_scanner"] = "builtin"
             print(f"    -> {len(host_data['ports'])} porta(s) aberta(s)")
 
         if not args.skip_http:

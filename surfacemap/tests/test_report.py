@@ -14,7 +14,11 @@ SAMPLE_DATA = {
     "hosts": {
         "example.com": {
             "ip": "93.184.216.34",
-            "ports": {80: "http", 443: "https"},
+            "port_scanner": "builtin",
+            "ports": {
+                80: {"service": "http", "product": None, "version": None, "extrainfo": None},
+                443: {"service": "https", "product": "nginx", "version": "1.18.0", "extrainfo": None},
+            },
             "http": {
                 "https": {
                     "url": "https://example.com",
