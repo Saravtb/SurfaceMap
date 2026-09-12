@@ -1,8 +1,9 @@
 # SurfaceMap
 
 Ferramenta de coleta de informacoes (reconnaissance) para construir um
-mapeamento de superficie de ataque de um dominio, como etapa inicial de um
-pentest autorizado.
+mapeamento de superficie de ataque, como etapa inicial de um pentest
+autorizado. Aceita como alvo um **dominio**, um **IP unico**, um **bloco
+CIDR** ou um **range de IPs**.
 
 ## ⚠️ Aviso legal
 
@@ -13,13 +14,32 @@ bug bounty com escopo definido, ou ativos proprios). Uso nao autorizado
 pode configurar crime e violar termos de servico. Ao rodar a ferramenta,
 voce sera solicitado a confirmar que possui essa autorizacao.
 
+## Tipos de alvo suportados
+
+| Alvo | Exemplo | O que roda |
+|---|---|---|
+| Dominio | `exemplo.com.br` | DNS, WHOIS, enumeracao de subdominios, e o restante abaixo para cada host resolvido |
+| IP unico | `192.168.1.10` | WHOIS do IP, e o restante abaixo |
+| Bloco CIDR | `192.168.1.0/24` | Expande para os IPs do bloco (host bits; `/31` e `/32` incluem ambos os enderecos), WHOIS do primeiro IP como amostra, e o restante abaixo para cada IP |
+| Range de IPs | `192.168.1.10-192.168.1.20` ou `192.168.1.10-20` (abreviado, ultimo octeto) | Mesmo tratamento de um bloco CIDR |
+
+Para alvos IP/CIDR/range a ferramenta tambem tenta resolver o **PTR**
+(DNS reverso) de cada endereco (desative com `--no-ptr`), e a descoberta
+de diretorios roda em todos os IPs com HTTP ativo por padrao (nao so no
+"alvo principal", conceito que so existe para dominios).
+
+⚠️ Um bloco grande (ex. `/16`) pode ter dezenas de milhares de enderecos;
+a ferramenta so escaneia em profundidade ate `--max-hosts` deles (padrao
+15) e avisa quando a lista foi truncada. Aumente `--max-hosts` conforme o
+escopo autorizado do teste.
+
 ## O que ela coleta
 
 | Modulo | Descricao |
 |---|---|
-| DNS | Registros A, AAAA, MX, NS, TXT, SOA, CNAME + teste de zone transfer (AXFR) |
-| WHOIS | Dados de registro do dominio |
-| Subdominios | Enumeracao passiva via Certificate Transparency (crt.sh) + brute force ativo por wordlist |
+| DNS | Registros A, AAAA, MX, NS, TXT, SOA, CNAME + teste de zone transfer (AXFR) — apenas para alvos de dominio |
+| WHOIS | Dados de registro do dominio, ou do IP/bloco quando o alvo e uma rede |
+| Subdominios | Enumeracao passiva via Certificate Transparency (crt.sh) + brute force ativo por wordlist — apenas para alvos de dominio |
 | Portas | Varredura TCP connect nas portas mais comuns (ou range customizado); opcionalmente via `nmap` com deteccao de servico/versao (`--use-nmap`) |
 | HTTP/HTTPS | Status, headers, titulo da pagina e fingerprint leve de tecnologias (WordPress, Nginx, Laravel, etc.) |
 | Diretorios | Descoberta de caminhos/arquivos sensiveis comuns (`.git`, `.env`, painel admin, backups, etc.) |
@@ -55,12 +75,15 @@ python main.py exemplo.com.br --yes
 
 ```
 positional:
-  target                     Dominio alvo (ex: exemplo.com.br)
+  target                     Dominio, IP unico, bloco CIDR ou range de IPs (ex: exemplo.com.br,
+                              192.168.1.10, 192.168.1.0/24, 192.168.1.10-192.168.1.20)
 
   -o, --output DIR           Diretorio de saida (padrao: reports/<alvo>-<timestamp>)
   -t, --threads N            Threads para brute force/scan (padrao: 30)
   --ports RANGE              Ex: "1-1024" ou "22,80,443" (padrao: top ports internas)
-  --max-hosts N              Maximo de subdominios analisados em profundidade (padrao: 15)
+  --max-hosts N              Maximo de hosts analisados em profundidade: subdominios extras
+                              (dominio) ou enderecos IP (CIDR/range) (padrao: 15)
+  --no-ptr                   Nao resolver PTR (DNS reverso) para alvos IP/CIDR/range
   --use-nmap                 Usa o nmap (se instalado) para escanear portas com deteccao de
                               servico/versao, em vez do scanner TCP connect interno. Se o
                               nmap nao estiver no PATH ou a execucao falhar, cai automaticamente
@@ -105,6 +128,20 @@ ativos de porta/diretorio, apenas DNS/WHOIS/subdominios passivos):
 
 ```bash
 python main.py exemplo.com.br --skip-ports --skip-dirs --no-active-subdomains --yes
+```
+
+Varredura de um bloco CIDR (rede interna de um cliente, por exemplo),
+elevando o limite de hosts para cobrir toda a `/24`:
+
+```bash
+python main.py 192.168.1.0/24 --max-hosts 254 --yes
+```
+
+Varredura de um range especifico de IPs, com sintaxe abreviada de
+ultimo octeto:
+
+```bash
+python main.py 10.0.0.100-150 --yes
 ```
 
 ## Estrutura do projeto

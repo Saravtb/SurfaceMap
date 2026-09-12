@@ -2,6 +2,7 @@
 import argparse
 import datetime
 import os
+import re
 import sys
 
 from surfacemap import utils
@@ -17,7 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="surfacemap",
         description="Ferramenta de coleta de informacoes e mapeamento de superficie para pentest.",
     )
-    parser.add_argument("target", help="Dominio alvo (ex: exemplo.com.br)")
+    parser.add_argument(
+        "target",
+        help="Dominio (exemplo.com.br), IP unico (192.168.1.10), bloco CIDR (192.168.1.0/24) "
+             "ou range de IPs (192.168.1.10-192.168.1.20 ou 192.168.1.10-20)"
+    )
     parser.add_argument("-o", "--output", help="Diretorio de saida do relatorio", default=None)
     parser.add_argument("-t", "--threads", type=int, default=30, help="Numero de threads (padrao: 30)")
     parser.add_argument(
@@ -26,7 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--max-hosts", type=int, default=15,
-        help="Numero maximo de subdominios (alem do alvo principal) a escanear em profundidade (padrao: 15)"
+        help="Numero maximo de hosts a escanear em profundidade: subdominios extras (alem do "
+             "alvo principal) para um dominio, ou enderecos IP para um CIDR/range (padrao: 15)"
+    )
+    parser.add_argument(
+        "--no-ptr", action="store_true",
+        help="Nao tentar resolver PTR (DNS reverso) para alvos IP/CIDR/range"
     )
     parser.add_argument(
         "--use-nmap", action="store_true",
@@ -79,15 +89,9 @@ def confirm_authorization(args) -> bool:
     return answer.strip().lower() in ("sim", "s", "yes", "y")
 
 
-def run(args) -> dict:
-    target = args.target.strip().lower()
-    if not utils.is_valid_domain(target):
-        print(f"Erro: '{target}' nao parece ser um dominio valido.", file=sys.stderr)
-        sys.exit(2)
-
-    started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    data = {"target": target, "started_at": started_at, "hosts": {}}
-
+def _run_domain_recon(args, target: str, data: dict) -> dict:
+    """DNS/WHOIS/subdomain-enum phase for a domain target. Returns the
+    resolved_hosts dict ({hostname: ip}) to scan in depth."""
     if not args.skip_dns:
         print(f"[*] Coletando registros DNS de {target}...")
         data["dns"] = dns_recon.get_dns_records(target)
@@ -127,7 +131,65 @@ def run(args) -> dict:
                 if ip:
                     resolved_hosts[host] = ip
 
-    hosts_to_scan = list(resolved_hosts.items())[: args.max_hosts + 1]
+    return dict(list(resolved_hosts.items())[: args.max_hosts + 1])
+
+
+def _run_network_recon(args, target_raw: str, target_kind: str, data: dict) -> dict:
+    """Expansion + WHOIS phase for an ip/cidr/range target. Returns the
+    resolved_hosts dict ({ip: ip}) to scan in depth."""
+    print(f"[*] Expandindo alvo de rede '{target_raw}' ({target_kind})...")
+    try:
+        ip_iter = utils.expand_ip_targets(target_raw)
+        collected = []
+        for ip in ip_iter:
+            collected.append(ip)
+            if len(collected) >= args.max_hosts:
+                break
+        truncated = False
+        try:
+            next(ip_iter)
+            truncated = True
+        except StopIteration:
+            pass
+    except ValueError as exc:
+        print(f"Erro: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    data["network"] = {"spec": target_raw, "scanned_count": len(collected), "truncated": truncated}
+
+    print(f"[*] {len(collected)} endereco(s) IP serao analisados em profundidade.")
+    if truncated:
+        print(
+            f"[!] O alvo contem mais enderecos do que --max-hosts ({args.max_hosts}). "
+            "Aumente --max-hosts para escanear mais IPs.",
+            file=sys.stderr,
+        )
+
+    if not args.skip_whois and collected:
+        print(f"[*] Consultando WHOIS de {collected[0]} (representativo do bloco)...")
+        data["whois"] = whois_lookup.get_whois(collected[0])
+
+    return {ip: ip for ip in collected}
+
+
+def run(args) -> dict:
+    target_raw = args.target.strip()
+    try:
+        target_kind = utils.classify_target(target_raw)
+    except ValueError as exc:
+        print(f"Erro: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    target = target_raw.lower() if target_kind == "domain" else target_raw
+    started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    data = {"target": target, "target_type": target_kind, "started_at": started_at, "hosts": {}}
+
+    if target_kind == "domain":
+        resolved_hosts = _run_domain_recon(args, target, data)
+    else:
+        resolved_hosts = _run_network_recon(args, target_raw, target_kind, data)
+
+    hosts_to_scan = list(resolved_hosts.items())
     print(f"[*] {len(hosts_to_scan)} host(s) serao analisados em profundidade: "
           f"{', '.join(h for h, _ in hosts_to_scan)}")
 
@@ -142,7 +204,14 @@ def run(args) -> dict:
 
     for host, ip in hosts_to_scan:
         host_data = {"ip": ip}
-        print(f"\n=== {host} ({ip}) ===")
+
+        if target_kind != "domain" and not args.no_ptr:
+            ptr = utils.resolve_ptr(ip)
+            if ptr:
+                host_data["ptr"] = ptr
+
+        label = f"{host} ({host_data['ptr']})" if host_data.get("ptr") else host
+        print(f"\n=== {label} ===")
 
         if not args.skip_ports:
             if use_nmap:
@@ -166,7 +235,7 @@ def run(args) -> dict:
             print(f"[*] Fazendo fingerprint HTTP/HTTPS de {host}...")
             host_data["http"] = http_probe.probe_host(host)
 
-        if not args.skip_dirs and (host == target or args.dir_enum_all):
+        if not args.skip_dirs and (target_kind != "domain" or host == target or args.dir_enum_all):
             has_http = any(
                 v.get("status") is not None
                 for v in host_data.get("http", {}).values()
@@ -199,8 +268,9 @@ def main(argv=None):
 
     data = run(args)
 
+    safe_target = re.sub(r"[^A-Za-z0-9.\-]", "_", data["target"])
     output_dir = args.output or os.path.join(
-        "reports", f"{data['target']}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        "reports", f"{safe_target}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
     )
     paths = builder.save_all_reports(data, output_dir)
 

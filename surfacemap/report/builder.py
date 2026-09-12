@@ -23,9 +23,20 @@ def _md_table(headers, rows) -> str:
 
 def to_markdown(data: dict) -> str:
     lines = [f"# Relatorio de Mapeamento de Superficie - {data['target']}", ""]
+    lines.append(f"- Tipo de alvo: {data.get('target_type', 'domain')}")
     lines.append(f"- Inicio: {data.get('started_at')}")
     lines.append(f"- Fim: {data.get('finished_at')}")
     lines.append("")
+
+    network = data.get("network")
+    if network:
+        lines.append("## Expansao do bloco/range")
+        lines.append(f"- Especificacao: {network.get('spec')}")
+        lines.append(f"- Enderecos analisados: {network.get('scanned_count')}")
+        if network.get("truncated"):
+            lines.append("- **Atencao**: o bloco contem mais enderecos do que o limite `--max-hosts`; "
+                          "a lista foi truncada.")
+        lines.append("")
 
     dns_records = data.get("dns", {})
     if dns_records:
@@ -46,7 +57,8 @@ def to_markdown(data: dict) -> str:
 
     whois_text = data.get("whois")
     if whois_text:
-        lines.append("## WHOIS (resumo)")
+        whois_title = "WHOIS (resumo)" if data.get("target_type", "domain") == "domain" else "WHOIS (endereco representativo do bloco)"
+        lines.append(f"## {whois_title}")
         snippet = "\n".join(whois_text.splitlines()[:20])
         lines.append("```")
         lines.append(snippet)
@@ -66,7 +78,8 @@ def to_markdown(data: dict) -> str:
 
     hosts = data.get("hosts", {})
     for host, hdata in hosts.items():
-        lines.append(f"## Host: {host} ({hdata.get('ip', 'sem IP')})")
+        ptr_suffix = f", PTR: {hdata['ptr']}" if hdata.get("ptr") else ""
+        lines.append(f"## Host: {host} ({hdata.get('ip', 'sem IP')}{ptr_suffix})")
 
         ports = hdata.get("ports", {})
         if ports:
@@ -145,6 +158,19 @@ def _html_table(headers, rows) -> str:
 def to_html(data: dict) -> str:
     sections = []
 
+    network = data.get("network")
+    if network:
+        warn = (
+            "<p class='danger'>Atencao: o bloco contem mais enderecos do que o limite "
+            "--max-hosts; a lista foi truncada.</p>"
+            if network.get("truncated") else ""
+        )
+        body = (
+            f"<p>Especificacao: {html.escape(str(network.get('spec')))}<br>"
+            f"Enderecos analisados: {network.get('scanned_count')}</p>{warn}"
+        )
+        sections.append(f"<section><h2>Expansao do bloco/range</h2>{body}</section>")
+
     dns_records = data.get("dns", {})
     if dns_records:
         rows = [[rtype, ", ".join(values) if values else "-"] for rtype, values in dns_records.items()]
@@ -165,9 +191,10 @@ def to_html(data: dict) -> str:
 
     whois_text = data.get("whois")
     if whois_text:
+        whois_title = "WHOIS (resumo)" if data.get("target_type", "domain") == "domain" else "WHOIS (endereco representativo do bloco)"
         snippet = "\n".join(whois_text.splitlines()[:25])
         sections.append(
-            f"<section><h2>WHOIS (resumo)</h2><pre>{html.escape(snippet)}</pre></section>"
+            f"<section><h2>{html.escape(whois_title)}</h2><pre>{html.escape(snippet)}</pre></section>"
         )
 
     subs = data.get("subdomains", {})
@@ -184,7 +211,8 @@ def to_html(data: dict) -> str:
 
     hosts = data.get("hosts", {})
     for host, hdata in hosts.items():
-        parts = [f"<h2>Host: {html.escape(host)} ({html.escape(str(hdata.get('ip', 'sem IP')))})</h2>"]
+        ptr_suffix = f", PTR: {html.escape(hdata['ptr'])}" if hdata.get("ptr") else ""
+        parts = [f"<h2>Host: {html.escape(host)} ({html.escape(str(hdata.get('ip', 'sem IP')))}{ptr_suffix})</h2>"]
 
         ports = hdata.get("ports", {})
         if ports:
