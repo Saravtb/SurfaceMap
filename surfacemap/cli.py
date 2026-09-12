@@ -16,7 +16,7 @@ from surfacemap.modules import (
     subdomains,
     whois_lookup,
 )
-from surfacemap.report import builder
+from surfacemap.report import builder, pdf as pdf_export
 
 DEFAULT_SUBDOMAIN_WORDLIST = os.path.join(os.path.dirname(__file__), "wordlists", "subdomains.txt")
 DEFAULT_DIR_WORDLIST = os.path.join(os.path.dirname(__file__), "wordlists", "common-dirs.txt")
@@ -76,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--screenshot-timeout", type=int, default=screenshot.DEFAULT_TIMEOUT_MS,
         help=f"Timeout em ms para carregar cada pagina antes do screenshot (padrao: {screenshot.DEFAULT_TIMEOUT_MS})"
+    )
+    parser.add_argument(
+        "--pdf", action="store_true",
+        help="Exporta o relatorio tambem em PDF (report.pdf), via Playwright/Chromium "
+             "(mesma dependencia opcional de --screenshots)."
     )
     parser.add_argument("--skip-dns", action="store_true")
     parser.add_argument("--skip-whois", action="store_true")
@@ -343,6 +348,22 @@ def main(argv=None):
     data = run(args, output_dir)
 
     paths = builder.save_all_reports(data, output_dir)
+
+    if args.pdf:
+        if not pdf_export.is_available():
+            print(
+                "[!] --pdf solicitado, mas o pacote 'playwright' nao esta instalado. "
+                "Rode: pip install playwright && playwright install chromium",
+                file=sys.stderr,
+            )
+        else:
+            print("\n[*] Exportando relatorio em PDF...")
+            pdf_path = os.path.join(output_dir, "report.pdf")
+            result = pdf_export.export_html_to_pdf(paths["html"], pdf_path)
+            if result["error"]:
+                print(f"[!] Falha ao exportar PDF: {result['error']}", file=sys.stderr)
+            else:
+                paths["pdf"] = result["path"]
 
     print("\n[+] Relatorios gerados:")
     for fmt, path in paths.items():

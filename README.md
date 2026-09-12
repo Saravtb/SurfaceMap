@@ -45,9 +45,11 @@ escopo autorizado do teste.
 | Diretorios | Descoberta de caminhos/arquivos sensiveis comuns (`.git`, `.env`, painel admin, backups, etc.) |
 | Screenshots | Captura de tela de cada host web ativo, via Chromium headless (`--screenshots`, opcional) |
 
-O resultado agregado e exportado em **JSON**, **Markdown** e **HTML**
+O resultado agregado e exportado em **JSON**, **Markdown**, **HTML**
 (relatorio navegavel, tema escuro, com tabelas por host e screenshots
-incorporados quando capturados).
+incorporados quando capturados) e, opcionalmente, **PDF** (`--pdf`), gerado
+a partir do proprio HTML via Chromium headless — util para anexar em um
+relatorio de pentest ou enviar por email.
 
 ## Instalacao
 
@@ -70,7 +72,8 @@ playwright install chromium
 ```
 
 Sem isso, `--screenshots` apenas imprime um aviso e a ferramenta continua
-normalmente (as demais etapas nao dependem do Playwright).
+normalmente (as demais etapas nao dependem do Playwright). A mesma
+instalacao tambem habilita `--pdf` (exportacao do relatorio em PDF).
 
 ## Uso
 
@@ -109,6 +112,7 @@ positional:
   --dir-enum-all             Roda descoberta de diretorios em todos os hosts, nao so no alvo principal
   --screenshots              Captura screenshot de cada host web ativo (requer Playwright + Chromium)
   --screenshot-timeout MS    Timeout em ms para carregar a pagina antes do screenshot (padrao: 15000)
+  --pdf                      Exporta o relatorio tambem em PDF (requer Playwright + Chromium)
 
   --skip-dns                 Pula coleta de registros DNS
   --skip-zone-transfer       Pula teste de AXFR
@@ -144,6 +148,13 @@ Reconhecimento com captura de screenshot de cada host web encontrado
 
 ```bash
 python main.py exemplo.com.br --screenshots --yes
+```
+
+Relatorio completo com screenshots e exportacao em PDF, pronto para
+anexar em um documento de pentest:
+
+```bash
+python main.py exemplo.com.br --screenshots --pdf --yes
 ```
 
 Somente reconhecimento passivo (sem tocar diretamente no alvo com scans
@@ -184,6 +195,7 @@ surfacemap/
     screenshot.py            Captura de tela opcional via Playwright/Chromium
   report/
     builder.py               Geracao de JSON/Markdown/HTML
+    pdf.py                    Exportacao opcional em PDF via Playwright/Chromium
   wordlists/
     subdomains.txt
     common-dirs.txt
@@ -197,10 +209,10 @@ main.py                Ponto de entrada (python main.py <alvo>)
   root. Use `--use-nmap` para deteccao de servico/versao via `nmap` quando
   ele estiver instalado (a ferramenta cai de volta para o scanner interno
   automaticamente se o binario nao existir ou a execucao falhar).
-- `--screenshots` exige `pip install playwright` + `playwright install
-  chromium` (ou um Chromium ja instalado e compativel com a versao do
-  pacote `playwright`); sem isso, a flag e ignorada com um aviso e o
-  restante do reconhecimento roda normalmente.
+- `--screenshots` e `--pdf` exigem `pip install playwright` + `playwright
+  install chromium` (ou um Chromium ja instalado e compativel com a
+  versao do pacote `playwright`); sem isso, cada flag e ignorada com um
+  aviso e o restante do reconhecimento/relatorio roda normalmente.
 - A enumeracao de subdominios ativa depende da wordlist fornecida; para
   cobertura maior, use uma wordlist maior (ex. SecLists) via
   `--subdomain-wordlist`.
